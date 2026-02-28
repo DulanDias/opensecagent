@@ -1,0 +1,22 @@
+# Test config - uses /tmp for all paths (no root required)
+agent:
+  name: opensecagent
+  version: "0.1.0"
+  data_dir: /tmp/opensecagent_data
+  log_dir: /tmp/opensecagent_log
+  run_dir: /tmp/opensecagent_run
+
+audit:
+  file: /tmp/opensecagent_log/audit.jsonl
+
+activity:
+  enabled: true
+  file: /tmp/opensecagent_log/activity.jsonl
+  max_size_mb: 10
+  retain_days: 7
+
+collector:
+  critical_files:
+    - /etc/passwd
+    - /etc/hosts
+    - /tmp/opensecagent_critical_test

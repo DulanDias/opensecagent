@@ -1,0 +1,33 @@
+# Virtual env and install
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+*.egg
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*~
+
+# Local config (secrets)
+.env
+*.local.yaml
+config/local.yaml
+deploy/config-home-server.yaml
+
+# Logs and data (local dev)
+*.log
+/var/

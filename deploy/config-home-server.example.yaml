@@ -1,0 +1,107 @@
+# OpenSecAgent - Example config for home server
+# Copy to config-home-server.yaml, fill in API keys and admin_emails, then copy to server as /etc/opensecagent/config.yaml
+
+agent:
+  name: opensecagent
+  version: "0.1.0"
+  data_dir: /var/lib/opensecagent
+  log_dir: /var/log/opensecagent
+  run_dir: /run/opensecagent
+
+scan_level: standard
+scan_frequencies:
+  quick:
+    host_interval_sec: 600
+    docker_interval_sec: 120
+    drift_interval_sec: 600
+    detector_interval_sec: 120
+    llm_scan_interval_sec: 7200
+  standard:
+    host_interval_sec: 300
+    docker_interval_sec: 60
+    drift_interval_sec: 300
+    detector_interval_sec: 60
+    llm_scan_interval_sec: 3600
+  deep:
+    host_interval_sec: 180
+    docker_interval_sec: 45
+    drift_interval_sec: 180
+    detector_interval_sec: 45
+    llm_scan_interval_sec: 1800
+
+threat_registry:
+  dir: ""
+execution:
+  run_as: ""
+reports:
+  dir: ""
+
+environment: prod
+action_tier_max: 1
+maintenance_windows: []
+
+collector:
+  host_interval_sec: 300
+  docker_interval_sec: 60
+  drift_interval_sec: 300
+  critical_files:
+    - /etc/passwd
+    - /etc/group
+    - /etc/sudoers
+    - /etc/ssh/sshd_config
+    - /etc/hosts
+    - /etc/crontab
+    - /etc/cron.d
+    - /etc/cron.d/*
+
+detector:
+  detector_interval_sec: 60
+  auth_failure_threshold: 5
+  auth_failure_window_sec: 300
+  baseline_learning_days: 3
+  resource_detector_enabled: true
+  resource_cpu_percent: 90
+  resource_memory_percent: 90
+
+notifications:
+  provider: resend
+  admin_emails: []   # e.g. ["you@example.com"]
+  smtp: { host: "", port: 587, use_tls: true, user: "", password: "", from: "OpenSecAgent <noreply@localhost>" }
+  resend:
+    api_key: ""       # Your Resend API key
+    from: ""          # e.g. "OpenSecAgent <alerts@yourdomain.com>"
+  immediate_severities: [P1, P2]
+  digest: { enabled: true, hour_utc: 8, minute: 0 }
+
+llm:
+  enabled: true
+  provider: openai
+  api_key: ""         # Your OpenAI API key
+  model: gpt-4o-mini
+  model_scan: ""
+  model_resolve: ""
+  base_url: ""
+  max_tokens: 2048
+  agent_max_iterations: 10
+  redact_patterns: ["password", "secret", "token", "key", "credential"]
+
+control_plane:
+  enabled: false
+  url: ""
+  agent_key: ""
+
+audit:
+  file: /var/log/opensecagent/audit.jsonl
+  max_size_mb: 100
+  retain_days: 90
+
+activity:
+  enabled: true
+  file: /var/log/opensecagent/activity.jsonl
+  log_dir: /var/log/opensecagent
+
+llm_agent:
+  enabled: true
+  run_on_incident: true
+  run_interval_sec: 3600
+  agent_max_iterations: 10

@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenSecAgent - Autonomous Server Cybersecurity Expert Bot
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m opensecagent.main --config %CONFIG_DIR%/config.yaml
+WorkingDirectory=%INSTALL_DIR%
+Environment=PYTHONPATH=%INSTALL_DIR%
+Restart=on-failure
+RestartSec=10
+
+# Least privilege: run as dedicated user if created
+# User=opensecagent
+# Group=opensecagent
+
+[Install]
+WantedBy=multi-user.target

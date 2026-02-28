@@ -1,0 +1,22 @@
+# OpenSecAgent - Docker Compose
+# Run: docker compose up -d
+# For host Docker inventory, mount the socket:
+#   - /var/run/docker.sock:/var/run/docker.sock
+services:
+  opensecagent:
+    build: .
+    container_name: opensecagent
+    restart: unless-stopped
+    volumes:
+      - opensecagent_data:/var/lib/opensecagent
+      - opensecagent_log:/var/log/opensecagent
+      - ./config:/etc/opensecagent:ro
+      - /var/run/docker.sock:/var/run/docker.sock  # optional: for Docker inventory
+    environment:
+      - OPENSECAGENT_CONFIG=/etc/opensecagent/config.yaml
+    # For full host visibility, use host network (Linux only):
+    # network_mode: host
+
+volumes:
+  opensecagent_data:
+  opensecagent_log:
