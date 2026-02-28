@@ -25,9 +25,9 @@ CLI_COMMANDS = {
 
 
 def main() -> None:
-    # Dispatch to CLI if any arg is a CLI command (e.g. collect, drift, agent)
+    # Dispatch to CLI for subcommands or --help (so we don't touch /var/lib without root)
     args = [a for a in sys.argv[1:] if not a.startswith("-") and "=" not in a]
-    if any(a in CLI_COMMANDS for a in args):
+    if any(a in CLI_COMMANDS for a in args) or "--help" in sys.argv or "-h" in sys.argv:
         from opensecagent.cli import main as cli_main
         cli_main()
         return
@@ -41,8 +41,17 @@ def main() -> None:
     config = load_config(config_path)
     data_dir = Path(config["agent"]["data_dir"])
     log_dir = Path(config["agent"]["log_dir"])
-    data_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        logger.error(
+            "Cannot create %s or %s (permission denied). "
+            "Run as root, or run 'opensecagent config' and set agent.data_dir / agent.log_dir to a path you can write (e.g. under $HOME).",
+            data_dir,
+            log_dir,
+        )
+        sys.exit(1)
 
     from opensecagent.daemon import Daemon
 
