@@ -93,6 +93,24 @@ class EmailReporter:
             body += f"- [{inc.get('severity', '')}] {inc.get('title', '')}\n"
         await self._send_mail(subject, body)
 
+    async def send_run_report(self, subject: str, body: str) -> None:
+        """Send a generic run report (e.g. after manual collect/drift/detect/agent)."""
+        if not self._can_send():
+            return
+        await self._send_mail(subject, body)
+
+    async def send_error_report(self, error: BaseException, context: str = "OpenSecAgent") -> None:
+        """Send an error notification to admin emails (e.g. unhandled exception in daemon or CLI)."""
+        if not self._can_send():
+            return
+        import traceback
+        subject = f"[OpenSecAgent] Error: {str(error)[:80]}"
+        body = f"{context} encountered an error.\n\n"
+        body += f"Exception: {type(error).__name__}: {error}\n\n"
+        body += "Traceback:\n"
+        body += traceback.format_exc()
+        await self._send_mail(subject, body)
+
     def _format_incident_body(self, incident: Incident, actions_taken: list[dict[str, Any]]) -> str:
         lines = [
             f"Incident: {incident.incident_id}",

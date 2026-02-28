@@ -18,7 +18,43 @@ logging.basicConfig(
 logger = logging.getLogger("opensecagent")
 
 
+def _config_path_from_argv() -> str | None:
+    if "--config" not in sys.argv and "-c" not in sys.argv:
+        return None
+    for i, a in enumerate(sys.argv[1:], 1):
+        if a in ("--config", "-c") and i < len(sys.argv) - 1:
+            return sys.argv[i + 1]
+    return None
+
+
+def _send_error_email_to_admin(error: BaseException, context: str = "OpenSecAgent") -> None:
+    """Try to load config and send error report to admin_emails. Swallows all exceptions."""
+    try:
+        config = load_config(_config_path_from_argv())
+        notif = config.get("notifications", {})
+        if not notif.get("admin_emails"):
+            return
+        if notif.get("provider") == "resend":
+            if not (notif.get("resend", {}).get("api_key") and notif.get("resend", {}).get("from")):
+                return
+        elif not notif.get("smtp", {}).get("host"):
+            return
+        from opensecagent.reporter.email_reporter import EmailReporter
+        reporter = EmailReporter(notif)
+        asyncio.run(reporter.send_error_report(error, context))
+    except Exception:
+        pass
+
+
 def main() -> None:
+    try:
+        _main()
+    except Exception as e:
+        _send_error_email_to_admin(e, "OpenSecAgent (daemon or CLI)")
+        raise
+
+
+def _main() -> None:
     # Run daemon only when no subcommand is given (e.g. "opensecagent" or "opensecagent --config /path")
     # If there is any positional arg (e.g. status, wizard, seup), use CLI so it handles valid commands or reports "invalid choice"
     positionals = [a for a in sys.argv[1:] if not a.startswith("-") and "=" not in a]
@@ -26,12 +62,7 @@ def main() -> None:
         from opensecagent.cli import main as cli_main
         cli_main()
         return
-    config_path = None
-    if "--config" in sys.argv or "-c" in sys.argv:
-        for i, a in enumerate(sys.argv[1:], 1):
-            if a in ("--config", "-c") and i < len(sys.argv) - 1:
-                config_path = sys.argv[i + 1]
-                break
+    config_path = _config_path_from_argv()
     # If no --config, load_config(None) uses /etc/opensecagent/config.yaml or ~/.config/opensecagent/config.yaml
     config = load_config(config_path)
     data_dir = Path(config["agent"]["data_dir"])

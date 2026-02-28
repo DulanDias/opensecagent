@@ -93,17 +93,17 @@ def _wizard_config_steps(config: dict[str, Any]) -> None:
 
 # --- Async commands (existing) ---
 
-async def cmd_collect(config: dict) -> None:
+async def cmd_collect(config: dict) -> dict[str, Any]:
     from opensecagent.collector.host import HostCollector
     from opensecagent.collector.docker_collector import DockerCollector
     h = HostCollector(config)
     d = DockerCollector(config)
     host_inv = await h.collect()
     docker_inv = await d.collect()
-    print(json.dumps({"host": host_inv, "docker": docker_inv}, indent=2))
+    return {"host": host_inv, "docker": docker_inv}
 
 
-async def cmd_drift(config: dict) -> None:
+async def cmd_drift(config: dict) -> dict[str, Any]:
     from opensecagent.collector.drift import DriftMonitor
     from opensecagent.reporter.audit import AuditLogger
     audit = AuditLogger(config.get("audit", {}))
@@ -111,10 +111,10 @@ async def cmd_drift(config: dict) -> None:
     mon = DriftMonitor(config, audit)
     await audit.stop()
     events = await mon.check()
-    print(json.dumps({"drift_events": [e for e in events], "count": len(events)}, indent=2))
+    return {"drift_events": [e for e in events], "count": len(events)}
 
 
-async def cmd_detect(config: dict) -> None:
+async def cmd_detect(config: dict) -> dict[str, Any]:
     from opensecagent.detector.manager import DetectorManager
     from opensecagent.reporter.audit import AuditLogger
     audit = AuditLogger(config.get("audit", {}))
@@ -122,7 +122,7 @@ async def cmd_detect(config: dict) -> None:
     mgr = DetectorManager(config, audit)
     await audit.stop()
     events = await mgr.run_detectors()
-    print(json.dumps({"detector_events": events, "count": len(events)}, indent=2))
+    return {"detector_events": events, "count": len(events)}
 
 
 async def cmd_export_audit(config: dict, path: str | None) -> None:
@@ -157,7 +157,7 @@ async def cmd_export_activity(config: dict, path: str | None) -> None:
     print(json.dumps(lines, indent=2))
 
 
-async def cmd_agent(config: dict) -> None:
+async def cmd_agent(config: dict) -> dict[str, Any]:
     from opensecagent.collector.host import HostCollector
     from opensecagent.collector.docker_collector import DockerCollector
     from opensecagent.reporter.activity import ActivityLogger
@@ -173,7 +173,74 @@ async def cmd_agent(config: dict) -> None:
     agent = LLMAgent(config, activity)
     result = await agent.run_agent_loop(context, None)
     await activity.stop()
+    return result
+
+
+async def _send_command_report(config: dict[str, Any], command: str, result: dict[str, Any]) -> None:
+    """Send a run report to admin_emails if notifications are configured."""
+    notif = config.get("notifications", {})
+    if not notif.get("admin_emails"):
+        return
+    if notif.get("provider") == "resend" and not (notif.get("resend", {}).get("api_key") and notif.get("resend", {}).get("from")):
+        return
+    if notif.get("provider") != "resend" and not notif.get("smtp", {}).get("host"):
+        return
+    from opensecagent.reporter.email_reporter import EmailReporter
+    reporter = EmailReporter(notif)
+    subject = f"[OpenSecAgent] Report: {command}"
+    body_lines = [f"OpenSecAgent manual run: {command}", ""]
+    if command == "collect":
+        host = result.get("host", {})
+        docker = result.get("docker", {})
+        pkgs = len(host.get("packages", [])) if isinstance(host.get("packages"), list) else 0
+        containers = len(docker.get("containers", [])) if isinstance(docker.get("containers"), list) else 0
+        body_lines.append(f"Host: {pkgs} packages collected.")
+        body_lines.append(f"Docker: {containers} containers.")
+    elif command == "drift":
+        count = result.get("count", 0)
+        events = result.get("drift_events", [])
+        body_lines.append(f"Drift events: {count}")
+        for e in events[:10]:
+            body_lines.append(f"  - {(e.get('raw') or {}).get('path', e.get('summary', str(e)[:80]))}")
+        if len(events) > 10:
+            body_lines.append(f"  ... and {len(events) - 10} more")
+    elif command == "detect":
+        count = result.get("count", 0)
+        events = result.get("detector_events", [])
+        body_lines.append(f"Detector events: {count}")
+        for e in events[:10]:
+            title = e.get("title", e.get("event_type", str(e)[:60]))
+            body_lines.append(f"  - {title}")
+        if len(events) > 10:
+            body_lines.append(f"  ... and {len(events) - 10} more")
+    elif command == "agent":
+        body_lines.append(result.get("summary", "Agent run completed."))
+        body_lines.append(f"Iterations: {result.get('iterations', 0)}, Commands executed: {result.get('commands_executed', 0)}")
+        if result.get("finding"):
+            body_lines.append("")
+            body_lines.append("Finding: " + json.dumps(result["finding"], indent=2)[:1500])
+        if result.get("actions_taken"):
+            body_lines.append("")
+            body_lines.append("Actions taken: " + ", ".join(result["actions_taken"][:20]))
+    body_lines.append("")
+    body_lines.append("(Full output was printed to the terminal.)")
+    await reporter.send_run_report(subject, "\n".join(body_lines))
+
+
+async def run_command_with_report(config: dict[str, Any], command: str) -> None:
+    """Run collect/drift/detect/agent, print result, then email report to admin_emails."""
+    if command == "collect":
+        result = await cmd_collect(config)
+    elif command == "drift":
+        result = await cmd_drift(config)
+    elif command == "detect":
+        result = await cmd_detect(config)
+    elif command == "agent":
+        result = await cmd_agent(config)
+    else:
+        return
     print(json.dumps(result, indent=2))
+    await _send_command_report(config, command, result)
 
 
 # --- Setup & config commands ---
@@ -685,13 +752,13 @@ def main() -> None:
     elif args.command == "uninstall":
         cmd_uninstall(getattr(args, "remove_unit", False))
     elif args.command == "collect":
-        asyncio.run(cmd_collect(config))
+        asyncio.run(run_command_with_report(config, "collect"))
     elif args.command == "drift":
-        asyncio.run(cmd_drift(config))
+        asyncio.run(run_command_with_report(config, "drift"))
     elif args.command == "detect":
-        asyncio.run(cmd_detect(config))
+        asyncio.run(run_command_with_report(config, "detect"))
     elif args.command == "agent":
-        asyncio.run(cmd_agent(config))
+        asyncio.run(run_command_with_report(config, "agent"))
     elif args.command == "export-audit":
         asyncio.run(cmd_export_audit(config, getattr(args, "path", None)))
     elif args.command == "export-activity":
