@@ -50,6 +50,14 @@ class DetectorManager:
             self._last_docker_inv = raw
             self._last_containers = {c.get("id", "") for c in raw.get("containers", [])}
 
+    def update_inventory(self, host_inv: dict[str, Any], docker_inv: dict[str, Any]) -> None:
+        """Set latest inventory from daemon so detectors see current state (e.g. before each run)."""
+        self._last_host_inv = host_inv or self._last_host_inv
+        self._last_docker_inv = docker_inv or self._last_docker_inv
+        self._last_ports = {str(p.get("port", p.get("address", ""))) for p in self._last_host_inv.get("listening_ports", [])}
+        self._last_containers = {c.get("id", "") for c in self._last_docker_inv.get("containers", [])}
+        self._last_sudo_users = set(self._last_host_inv.get("users_with_sudo", []))
+
     def correlate_and_classify(self, event: dict[str, Any]) -> Incident | None:
         event_type = event.get("event_type")
         source = event.get("source")

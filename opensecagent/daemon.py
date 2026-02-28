@@ -175,6 +175,7 @@ class Daemon:
         incident = self._detector_manager.correlate_and_classify(event)
         if not incident:
             return
+        logger.info("Incident: %s %s", incident.severity.value, incident.title[:60])
         if self._llm._enabled:
             incident.llm_summary = await self._llm.summarize_incident(incident)
         await self._audit.log_incident(incident)
@@ -196,6 +197,7 @@ class Daemon:
             and llm_agent_cfg.get("run_on_incident")
             and incident.severity.value in ("P1", "P2")
         ):
+            logger.info("Running LLM agent (resolve) for P1/P2 incident")
             from opensecagent.threat_registry import store_threat, mark_resolved
 
             threat_id = store_threat(
@@ -234,19 +236,26 @@ class Daemon:
                 )
 
     async def _run_detectors(self) -> None:
-        ival = self._intervals["detector_interval_sec"]
+        ival = max(15, self._intervals.get("detector_interval_sec", 60))
+        first_run = True
         while self._running:
             try:
+                self._detector_manager.update_inventory(self._last_host_inv, self._last_docker_inv)
                 t0 = time.perf_counter()
                 events = await self._detector_manager.run_detectors()
                 duration = time.perf_counter() - t0
                 event_types = list({e.get("event_type", "") for e in events})
                 await self._activity.log_detector_run("manager", len(events), event_types, duration)
+                logger.info("Detector run: %d events %s (%.2fs)", len(events), event_types or ["(none)"], duration)
                 for e in events:
                     await self._event_queue.put(e)  # type: ignore
             except Exception as e:
                 logger.exception("Detector error: %s", e)
-            await asyncio.sleep(ival)
+            if first_run:
+                first_run = False
+                await asyncio.sleep(min(20, ival))
+            else:
+                await asyncio.sleep(ival)
 
     async def _run_periodic_agent(self) -> None:
         ival = self._intervals["llm_scan_interval_sec"]
