@@ -8,12 +8,50 @@ from typing import Any
 import yaml
 
 
+def get_default_config_path() -> Path:
+    """Where to write config when user runs `opensecagent config` (wizard). Prefer standard locations."""
+    env = os.environ.get("OPENSECAGENT_CONFIG")
+    if env:
+        return Path(env)
+    # Prefer /etc if writable (e.g. after sudo)
+    etc = Path("/etc/opensecagent/config.yaml")
+    try:
+        etc.parent.mkdir(parents=True, exist_ok=True)
+        if os.access(etc.parent, os.W_OK):
+            return etc
+    except OSError:
+        pass
+    xdg = Path(os.path.expanduser("~/.config/opensecagent/config.yaml"))
+    xdg.parent.mkdir(parents=True, exist_ok=True)
+    return xdg
+
+
+def find_config_path(path: str | Path | None = None) -> Path | None:
+    """Return the path that load_config would use, or None if using built-in defaults."""
+    if path:
+        p = Path(path)
+        return p if p.exists() else None
+    if os.environ.get("OPENSECAGENT_CONFIG"):
+        p = Path(os.environ.get("OPENSECAGENT_CONFIG", ""))
+        return p if p.exists() else None
+    for candidate in [Path("/etc/opensecagent/config.yaml"), Path(os.path.expanduser("~/.config/opensecagent/config.yaml"))]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     path = path or os.environ.get("OPENSECAGENT_CONFIG")
     if path:
         path = Path(path)
         if path.exists():
             with open(path) as f:
+                data = yaml.safe_load(f) or {}
+            return _deep_merge(_default_config(), data)
+    # Standard paths (no --config given)
+    for candidate in [Path("/etc/opensecagent/config.yaml"), Path(os.path.expanduser("~/.config/opensecagent/config.yaml"))]:
+        if candidate.exists():
+            with open(candidate) as f:
                 data = yaml.safe_load(f) or {}
             return _deep_merge(_default_config(), data)
     # Try project root config (development)

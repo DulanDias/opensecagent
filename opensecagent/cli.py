@@ -13,6 +13,8 @@ from typing import Any
 from opensecagent import __version__
 from opensecagent.config import (
     get_default_config,
+    get_default_config_path,
+    find_config_path,
     load_config,
     save_config,
     set_config_key,
@@ -323,18 +325,17 @@ def cmd_config_set(config_path: str | None, key: str, value: str, output_path: s
 
 def cmd_config_wizard(config_path: str | None) -> None:
     """Interactive wizard to set admin emails, SMTP, environment, LLM."""
-    path = config_path or os.environ.get("OPENSECAGENT_CONFIG")
-    if path and Path(path).exists():
-        path = Path(path)
+    path = Path(config_path) if config_path else get_default_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
         config = load_config(path)
     else:
         config = get_default_config()
-        path = Path(config_path or "/etc/opensecagent/config.yaml")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        config["agent"]["data_dir"] = _prompt("Data directory", "/var/lib/opensecagent")
-        config["agent"]["log_dir"] = log = _prompt("Log directory", "/var/log/opensecagent")
-        config["audit"]["file"] = f"{log}/audit.jsonl"
-        config["activity"]["file"] = f"{log}/activity.jsonl"
+        config["agent"]["data_dir"] = "/var/lib/opensecagent"
+        config["agent"]["log_dir"] = "/var/log/opensecagent"
+        config["audit"]["file"] = "/var/log/opensecagent/audit.jsonl"
+        config["activity"]["file"] = "/var/log/opensecagent/activity.jsonl"
+        config["activity"]["log_dir"] = "/var/log/opensecagent"
 
     print("\n  OpenSecAgent — Configuration wizard\n")
     _wizard_config_steps(config)
@@ -344,7 +345,33 @@ def cmd_config_wizard(config_path: str | None) -> None:
     if errs:
         print("  Warnings:", *errs, sep="\n    - ")
     else:
-        print("  Config is valid. Run: opensecagent --config", path, "status\n")
+        print("  Config is valid. You can now run: opensecagent status   (no --config needed)\n")
+
+
+def cmd_config(config_path: str | None) -> None:
+    """Run config wizard and write YAML to default path. No --config needed afterward."""
+    path = Path(config_path) if config_path else get_default_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        config = load_config(path)
+    else:
+        config = get_default_config()
+        config["agent"]["data_dir"] = "/var/lib/opensecagent"
+        config["agent"]["log_dir"] = "/var/log/opensecagent"
+        config["audit"]["file"] = "/var/log/opensecagent/audit.jsonl"
+        config["activity"]["file"] = "/var/log/opensecagent/activity.jsonl"
+        config["activity"]["log_dir"] = "/var/log/opensecagent"
+
+    print("\n  OpenSecAgent — Config (interactive)\n")
+    print("  Answer the questions below; we'll write the config file for you.\n")
+    _wizard_config_steps(config)
+    save_config(path, config)
+    print(f"\n  Config written to: {path}")
+    errs = validate_config(config)
+    if errs:
+        print("  Warnings:", *errs, sep="\n    - ")
+    else:
+        print("  Done. Run  opensecagent status  or  opensecagent run  (no --config needed).\n")
 
 
 def _get_systemd_unit_content() -> str:
@@ -430,9 +457,10 @@ def cmd_install(
 def cmd_status(config_path: str | None) -> None:
     """Show config path, version, paths, and whether daemon is running."""
     config = load_config(config_path)
+    resolved = find_config_path(config_path)
     print("OpenSecAgent status")
     print("  Version:", __version__)
-    print("  Config: ", config_path or os.environ.get("OPENSECAGENT_CONFIG") or "(defaults only)")
+    print("  Config: ", resolved or config_path or os.environ.get("OPENSECAGENT_CONFIG") or "(defaults only)")
     print("  Data:   ", config.get("agent", {}).get("data_dir"))
     print("  Log:    ", config.get("agent", {}).get("log_dir"))
     print("  Audit:  ", config.get("audit", {}).get("file"))
@@ -484,16 +512,16 @@ def main() -> None:
     p_setup.add_argument("--force", action="store_true", help="Overwrite existing config")
     p_setup.add_argument("--interactive", "-i", action="store_true", help="Prompt for paths and run config wizard")
 
-    # config
-    p_config = sub.add_parser("config", help="View or edit configuration")
-    p_config_sub = p_config.add_subparsers(dest="config_cmd", required=True)
-    p_config_show = p_config_sub.add_parser("show", help="Show merged config (YAML)")
-    p_config_validate = p_config_sub.add_parser("validate", help="Validate config file")
+    # config (no subcommand = run wizard and write YAML; no --config needed afterward)
+    p_config = sub.add_parser("config", help="Interactive config wizard (writes YAML). Or: config show|validate|set")
+    p_config_sub = p_config.add_subparsers(dest="config_cmd", required=False)
+    p_config_sub.add_parser("show", help="Show merged config (YAML)")
+    p_config_sub.add_parser("validate", help="Validate config file")
     p_config_set = p_config_sub.add_parser("set", help="Set a key (e.g. notifications.admin_emails.0=admin@example.com)")
     p_config_set.add_argument("key", help="Dot-separated key")
     p_config_set.add_argument("value", help="Value (string; true/false and numbers auto-parsed)")
     p_config_set.add_argument("--output", "-o", help="Write to this path instead of --config")
-    p_config_wizard = p_config_sub.add_parser("wizard", help="Interactive configuration wizard")
+    p_config_sub.add_parser("wizard", help="Same as 'opensecagent config' (interactive wizard)")
 
     # install
     p_install = sub.add_parser("install", help="Install systemd service (--interactive for wizard)")
@@ -523,9 +551,7 @@ def main() -> None:
 
     args = ap.parse_args()
     config_path = getattr(args, "config", None)
-    config = load_config(config_path) if config_path or os.environ.get("OPENSECAGENT_CONFIG") else None
-    if config is None and args.command not in ("setup", "config", "install", "uninstall", "status"):
-        config = load_config(config_path)
+    config = load_config(config_path)  # uses --config, env, or /etc/opensecagent/config.yaml, ~/.config/opensecagent/config.yaml
 
     if args.command == "wizard":
         cmd_wizard()
@@ -547,6 +573,9 @@ def main() -> None:
             cmd_config_set(config_path, args.key, args.value, getattr(args, "output", None))
         elif args.config_cmd == "wizard":
             cmd_config_wizard(config_path)
+        else:
+            # No subcommand: run wizard and write config (no --config needed afterward)
+            cmd_config(config_path)
     elif args.command == "install":
         cmd_install(
             config_path,

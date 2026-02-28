@@ -47,22 +47,39 @@
 
 ## Installation
 
-### Option A: pip (recommended when available)
+### Option A: pipx (recommended on Linux / when you see “externally-managed-environment”)
+
+On many Linux systems (Debian, Ubuntu, etc.) the system Python is “externally managed” and `pip install` is blocked. Use **pipx** so the app runs in its own environment and the `opensecagent` command is on your PATH:
 
 ```bash
-pip install opensecagent
-opensecagent --config /etc/opensecagent/config.yaml
+# Install pipx if needed: sudo apt install pipx && pipx ensurepath
+pipx install opensecagent
+opensecagent config    # interactive wizard → writes config (no path needed)
+opensecagent status    # or run the daemon: opensecagent
 ```
+
+### Option A2: pip in a virtual environment
+
+If you prefer a venv (or are on macOS/Windows where `pip install` often works):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install opensecagent
+opensecagent config
+opensecagent status
+```
+
+After `opensecagent config`, the config file is written to `/etc/opensecagent/config.yaml` (if writable) or `~/.config/opensecagent/config.yaml`. You never need to pass `--config` unless you use a custom path.
 
 ### Option B: From source
 
 ```bash
-git clone https://github.com/YOUR_ORG/opensecagent.git
+git clone https://github.com/DulanDias/opensecagent.git
 cd opensecagent
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m opensecagent.main --config config/default.yaml
+pip install -e .
+opensecagent config    # wizard → writes config
+opensecagent status
 ```
 
 ### Option C: systemd service
@@ -91,6 +108,10 @@ docker run -d --name opensecagent \
 ---
 
 ## Configuration
+
+**Easiest:** run `opensecagent config`. You answer a few questions (scan frequency, email, LLM API key, etc.) and the tool writes the YAML for you. No need to pass a config path afterward.
+
+**Config file location** (when not using `--config`): `/etc/opensecagent/config.yaml` or `~/.config/opensecagent/config.yaml`. Override with `OPENSECAGENT_CONFIG=/path/to/config.yaml` or `opensecagent --config /path/to/config.yaml`.
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -279,6 +300,6 @@ Contributions are welcome. Please open an issue or PR on GitHub.
 
 ## Links
 
-- **GitHub**: https://github.com/YOUR_ORG/opensecagent
-- **Issues**: https://github.com/YOUR_ORG/opensecagent/issues
+- **GitHub**: https://github.com/DulanDias/opensecagent
+- **Issues**: https://github.com/DulanDias/opensecagent/issues
 - **Documentation**: (link when available)

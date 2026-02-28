@@ -32,10 +32,12 @@ def main() -> None:
         cli_main()
         return
     config_path = None
-    if "--config" in sys.argv:
-        i = sys.argv.index("--config")
-        if i + 1 < len(sys.argv):
-            config_path = sys.argv[i + 1]
+    if "--config" in sys.argv or "-c" in sys.argv:
+        for i, a in enumerate(sys.argv[1:], 1):
+            if a in ("--config", "-c") and i < len(sys.argv) - 1:
+                config_path = sys.argv[i + 1]
+                break
+    # If no --config, load_config(None) uses /etc/opensecagent/config.yaml or ~/.config/opensecagent/config.yaml
     config = load_config(config_path)
     data_dir = Path(config["agent"]["data_dir"])
     log_dir = Path(config["agent"]["log_dir"])
