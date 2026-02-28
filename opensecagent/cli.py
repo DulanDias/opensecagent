@@ -267,14 +267,25 @@ def cmd_setup(
         config_dir = _prompt("Config directory", "/etc/opensecagent")
         data_dir = _prompt("Data directory", "/var/lib/opensecagent")
         log_dir = _prompt("Log directory", "/var/log/opensecagent")
-    config_dir = Path(config_dir)
-    data_dir = Path(data_dir)
-    log_dir = Path(log_dir)
+    config_dir = Path(config_dir).expanduser()
+    data_dir = Path(data_dir).expanduser()
+    log_dir = Path(log_dir).expanduser()
     config_path = config_dir / (config_file or "config.yaml")
 
-    config_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        home = Path.home()
+        config_dir = home / ".config" / "opensecagent"
+        data_dir = home / ".local" / "share" / "opensecagent"
+        log_dir = home / ".local" / "state" / "opensecagent"
+        config_path = config_dir / (config_file or "config.yaml")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        print("Using user paths (no write access to /etc or /var):")
     print(f"Created directories: {config_dir}, {data_dir}, {log_dir}")
 
     if not config_path.exists() or force:
