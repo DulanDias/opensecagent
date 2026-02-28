@@ -59,6 +59,9 @@ def _main() -> None:
     # If there is any positional arg (e.g. status, wizard, seup), use CLI so it handles valid commands or reports "invalid choice"
     positionals = [a for a in sys.argv[1:] if not a.startswith("-") and "=" not in a]
     if positionals or "--help" in sys.argv or "-h" in sys.argv:
+        if "--help" in sys.argv or "-h" in sys.argv:
+            from opensecagent.ascii_art import print_install_success
+            print_install_success()
         from opensecagent.cli import main as cli_main
         cli_main()
         return
@@ -80,7 +83,9 @@ def _main() -> None:
         sys.exit(1)
 
     from opensecagent.daemon import Daemon
+    from opensecagent.ascii_art import print_daemon_banner
 
+    print_daemon_banner()
     daemon = Daemon(config)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

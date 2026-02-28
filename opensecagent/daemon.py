@@ -206,14 +206,20 @@ class Daemon:
                 evidence=dict(incident.evidence_summary or {}),
                 resolution_actions=None,
             )
+            first_ev = incident.events[0] if incident.events else None
+            incident_ctx = {
+                "title": incident.title,
+                "narrative": incident.narrative,
+                "severity": incident.severity.value,
+                "event_type": getattr(first_ev, "event_type", None) if first_ev else None,
+                "evidence": incident.evidence_summary or {},
+            }
+            if first_ev and getattr(first_ev, "raw", None):
+                incident_ctx["raw"] = first_ev.raw
             context = {
                 "host": self._last_host_inv,
                 "docker": self._last_docker_inv,
-                "incident": {
-                    "title": incident.title,
-                    "narrative": incident.narrative,
-                    "severity": incident.severity.value,
-                },
+                "incident": incident_ctx,
             }
             result = await self._llm_agent.run_agent_loop(context, incident, mode="resolve")
             incident.llm_summary = (incident.llm_summary or "") + f"\n[Agent] {result.get('summary', '')}"

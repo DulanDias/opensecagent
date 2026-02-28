@@ -52,6 +52,11 @@ detector:
   npm_audit_enabled: true
   npm_audit_paths: ["/var/www", "/opt", "/home"]
   npm_audit_max_depth: 4
+  php_scan_enabled: true
+  php_scan_paths: ["/var/www", "/home"]
+  php_scan_max_depth: 8
+  php_scan_max_files: 500
+  php_scan_max_bytes: 102400
 
 # Notifications
 notifications:

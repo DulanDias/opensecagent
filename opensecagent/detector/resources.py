@@ -17,13 +17,27 @@ def _sample_resources(cpu_threshold: float, mem_threshold: float) -> list[dict[s
     try:
         cpu = psutil.cpu_percent(interval=1)
         if cpu >= cpu_threshold:
+            raw: dict[str, Any] = {"cpu_percent": cpu, "threshold": cpu_threshold}
+            try:
+                procs = list(psutil.process_iter(attrs=["pid", "name", "cmdline"]))
+                top_by_cpu: list[dict[str, Any]] = []
+                for p in procs[:80]:
+                    try:
+                        cpu_p = p.cpu_percent(interval=0)
+                        if cpu_p > 0:
+                            top_by_cpu.append({"pid": p.info.get("pid"), "name": p.info.get("name"), "cpu_percent": round(cpu_p, 1), "cmdline": (p.info.get("cmdline") or [])[:5]})
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                raw["top_processes"] = sorted(top_by_cpu, key=lambda x: x.get("cpu_percent", 0), reverse=True)[:10]
+            except Exception:
+                pass
             events.append({
                 "event_id": f"resource-cpu-{id(cpu_threshold) % 2**32}",
                 "source": "detector.resources",
                 "event_type": "high_cpu",
                 "severity": "P2",
                 "summary": f"High CPU usage: {cpu:.1f}% (threshold {cpu_threshold}%)",
-                "raw": {"cpu_percent": cpu, "threshold": cpu_threshold},
+                "raw": raw,
                 "asset_ids": ["host"],
                 "confidence": min(1.0, cpu / 100),
             })

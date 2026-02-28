@@ -153,6 +153,11 @@ def _default_config() -> dict[str, Any]:
             "npm_audit_enabled": True,
             "npm_audit_paths": ["/var/www", "/opt", "/home"],
             "npm_audit_max_depth": 4,
+            "php_scan_enabled": True,
+            "php_scan_paths": ["/var/www", "/home"],
+            "php_scan_max_depth": 8,
+            "php_scan_max_files": 500,
+            "php_scan_max_bytes": 102400,
         },
         "notifications": {
             "provider": "smtp",

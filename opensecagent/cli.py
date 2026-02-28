@@ -247,10 +247,8 @@ async def run_command_with_report(config: dict[str, Any], command: str) -> None:
 
 def cmd_wizard() -> None:
     """Full wizard: paths → create dirs + config → configure → validate → optional install → status."""
-    print("\n  ═══════════════════════════════════════════════════════")
-    print("  OpenSecAgent Setup Wizard")
-    print("  ═══════════════════════════════════════════════════════\n")
-
+    from opensecagent.ascii_art import print_wizard_banner
+    print_wizard_banner()
     print("  Step 1 — Paths")
     config_dir = _prompt("Config directory", "/etc/opensecagent")
     data_dir = _prompt("Data directory", "/var/lib/opensecagent")
@@ -305,6 +303,8 @@ def cmd_wizard() -> None:
         subprocess.run(["systemctl", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         print("  systemctl not found. Skip install. Run daemon manually: opensecagent --config", config_path)
+        from opensecagent.ascii_art import animate_wizard_complete
+        animate_wizard_complete()
         print("\n  Done. Check status: opensecagent --config", config_path, "status\n")
         return
 
@@ -317,6 +317,8 @@ def cmd_wizard() -> None:
 
     print("\n  Step 5 — Status")
     cmd_status(str(config_path))
+    from opensecagent.ascii_art import animate_wizard_complete
+    animate_wizard_complete()
     print("\n  Wizard complete. Use: opensecagent --config", config_path, "(to run daemon)\n")
 
 
@@ -510,36 +512,51 @@ def cmd_install(
         data_dir = _prompt("Data directory", "/var/lib/opensecagent")
         log_dir = _prompt("Log directory", "/var/log/opensecagent")
         no_start = not _prompt_yn("Start service after install?", True)
-    config_dir = Path(config_dir)
-    config_dir.mkdir(parents=True, exist_ok=True)
-    Path(data_dir).mkdir(parents=True, exist_ok=True)
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    config_dir = Path(config_dir).expanduser()
+    data_dir = Path(data_dir).expanduser()
+    log_dir = Path(log_dir).expanduser()
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        home = Path.home()
+        config_dir = home / ".config" / "opensecagent"
+        data_dir = home / ".local" / "share" / "opensecagent"
+        log_dir = home / ".local" / "state" / "opensecagent"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        print("  Using user paths (no write access to /etc or /var):")
 
     config_file = config_dir / "config.yaml"
     if not config_file.exists():
         cfg = get_default_config()
-        cfg["agent"]["data_dir"] = data_dir
-        cfg["agent"]["log_dir"] = log_dir
-        cfg["audit"]["file"] = f"{log_dir}/audit.jsonl"
-        cfg["activity"]["file"] = f"{log_dir}/activity.jsonl"
+        cfg["agent"]["data_dir"] = str(data_dir)
+        cfg["agent"]["log_dir"] = str(log_dir)
+        cfg["audit"]["file"] = str(log_dir / "audit.jsonl")
+        cfg["activity"]["file"] = str(log_dir / "activity.jsonl")
         save_config(config_file, cfg)
         print(f"  Created {config_file}")
 
     unit = Path("/etc/systemd/system/opensecagent.service")
-    if not unit.parent.exists():
-        print("Cannot write to /etc/systemd/system. Run as root.", file=sys.stderr)
-        sys.exit(1)
-    unit_content = _get_systemd_unit_content().replace("%INSTALL_DIR%", install_dir).replace("%CONFIG_DIR%", str(config_dir))
-    unit.write_text(unit_content)
-    print(f"  Wrote {unit}")
-    subprocess.run(["systemctl", "daemon-reload"], check=True)
-    if not no_start:
-        subprocess.run(["systemctl", "enable", "opensecagent"], check=True)
-        subprocess.run(["systemctl", "start", "opensecagent"], check=True)
-        print("  Started opensecagent. Logs: journalctl -u opensecagent -f")
-    else:
-        print("  Run: sudo systemctl enable opensecagent && sudo systemctl start opensecagent")
-        print("  Logs: journalctl -u opensecagent -f")
+    try:
+        if not unit.parent.exists():
+            raise PermissionError("No access to /etc/systemd/system")
+        unit_content = _get_systemd_unit_content().replace("%INSTALL_DIR%", str(Path(install_dir).expanduser())).replace("%CONFIG_DIR%", str(config_dir))
+        unit.write_text(unit_content)
+        print(f"  Wrote {unit}")
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        if not no_start:
+            subprocess.run(["systemctl", "enable", "opensecagent"], check=True)
+            subprocess.run(["systemctl", "start", "opensecagent"], check=True)
+            print("  Started opensecagent. Logs: journalctl -u opensecagent -f")
+        else:
+            print("  Run: sudo systemctl enable opensecagent && sudo systemctl start opensecagent")
+            print("  Logs: journalctl -u opensecagent -f")
+    except (PermissionError, OSError) as e:
+        print("  Skipped systemd install (need root). Run daemon manually:", file=sys.stderr)
+        print(f"    opensecagent --config {config_file}", file=sys.stderr)
     if interactive:
         print("\n  Config file:", config_file, "\n")
 

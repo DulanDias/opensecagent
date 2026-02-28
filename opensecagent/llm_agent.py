@@ -10,6 +10,7 @@ from typing import Any
 logger = __import__("logging").getLogger("opensecagent.llm_agent")
 
 # Allowed commands: (regex pattern, allow_shell). Shell=false means exec-style (no shell expansion).
+# Investigation + remediation for high CPU/malware (e.g. crypto miner in container): ps, top, docker top, docker exec, kill, npm uninstall.
 ALLOWED_COMMANDS = [
     # Read-only / scan
     (r"^apt\s+list\s+", False),
@@ -21,6 +22,7 @@ ALLOWED_COMMANDS = [
     (r"^docker\s+ps", False),
     (r"^docker\s+images", False),
     (r"^docker\s+inspect\s+", False),
+    (r"^docker\s+top\s+\S+", False),
     (r"^cat\s+/etc/", False),
     (r"^ls\s+-la\s+/etc/", False),
     (r"^getent\s+", False),
@@ -30,6 +32,26 @@ ALLOWED_COMMANDS = [
     (r"^whoami$", False),
     (r"^uname\s+-a$", False),
     (r"^hostname$", False),
+    # Process investigation (host)
+    (r"^ps\s+aux", False),
+    (r"^ps\s+-ef", False),
+    (r"^top\s+-bn1", False),
+    (r"^pgrep\s+-f\s+", False),
+    # Kill process on host (single PID only)
+    (r"^kill\s+-9\s+\d+(\s+\d+)*$", False),
+    # Docker exec: investigation and remediation inside container (restricted inner commands)
+    (r"^docker\s+exec\s+\S+\s+ps\s+aux", False),
+    (r"^docker\s+exec\s+\S+\s+ps\s+-ef", False),
+    (r"^docker\s+exec\s+\S+\s+top\s+-bn1", False),
+    (r"^docker\s+exec\s+\S+\s+kill\s+-9\s+\d+", False),
+    (r"^docker\s+exec\s+\S+\s+npm\s+uninstall\s+", False),
+    (r"^docker\s+exec\s+\S+\s+rm\s+-f\s+", False),
+    (r"^docker\s+exec\s+\S+\s+ls\s+", False),
+    # Remove suspected PHP malware (web paths only)
+    (r"^rm\s+-f\s+/var/www/.*\.php", False),
+    (r"^rm\s+-f\s+/home/[^/]+/.*\.php", False),
+    (r"^mv\s+/var/www/[^\s]+\s+", False),
+    (r"^mv\s+/home/[^/]+/[^\s]+\s+", False),
     # Remediation (safe)
     (r"^apt\s+install\s+-y\s+", False),
     (r"^apt\s+upgrade\s+-y$", False),

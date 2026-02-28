@@ -16,6 +16,7 @@ from opensecagent.detector.network import NetworkDetector
 from opensecagent.detector.nginx_audit import NginxAuditDetector
 from opensecagent.detector.firewall import FirewallAuditDetector
 from opensecagent.detector.npm_audit import NpmAuditDetector
+from opensecagent.detector.php_scan import PhpScanDetector
 
 
 class DetectorManager:
@@ -31,6 +32,7 @@ class DetectorManager:
         self._nginx_audit = NginxAuditDetector(config)
         self._firewall_audit = FirewallAuditDetector(config)
         self._npm_audit = NpmAuditDetector(config)
+        self._php_scan = PhpScanDetector(config)
         self._last_host_inv: dict[str, Any] = {}
         self._last_docker_inv: dict[str, Any] = {}
         self._last_ports: set[str] = set()
@@ -110,6 +112,8 @@ class DetectorManager:
             rec.append("Configure host firewall (ufw or iptables) and ensure default deny or allow policy.")
         elif event_type == "npm_audit_vulnerabilities":
             rec.append("Run 'npm audit fix' in the project directory; for breaking changes consider 'npm audit fix --force' or manual updates.")
+        elif event_type == "php_malware_suspected":
+            rec.append("Review the PHP file; if confirmed malware remove it (rm or move to quarantine) and restore from clean backup if needed.")
         else:
             rec.append("Review evidence and take action as per runbook.")
         return rec
@@ -153,4 +157,7 @@ class DetectorManager:
         # npm audit (package.json dirs)
         npm_evs = await self._npm_audit.check()
         events.extend(npm_evs)
+        # PHP malware scan (WordPress / web roots)
+        php_evs = await self._php_scan.check()
+        events.extend(php_evs)
         return events
