@@ -12,6 +12,10 @@ from opensecagent.detector.ports import NewPortDetector
 from opensecagent.detector.containers import NewContainerDetector
 from opensecagent.detector.users import NewAdminUserDetector
 from opensecagent.detector.resources import ResourceDetector
+from opensecagent.detector.network import NetworkDetector
+from opensecagent.detector.nginx_audit import NginxAuditDetector
+from opensecagent.detector.firewall import FirewallAuditDetector
+from opensecagent.detector.npm_audit import NpmAuditDetector
 
 
 class DetectorManager:
@@ -23,6 +27,10 @@ class DetectorManager:
         self._containers = NewContainerDetector(config)
         self._users = NewAdminUserDetector(config)
         self._resources = ResourceDetector(config)
+        self._network = NetworkDetector(config)
+        self._nginx_audit = NginxAuditDetector(config)
+        self._firewall_audit = FirewallAuditDetector(config)
+        self._npm_audit = NpmAuditDetector(config)
         self._last_host_inv: dict[str, Any] = {}
         self._last_docker_inv: dict[str, Any] = {}
         self._last_ports: set[str] = set()
@@ -90,6 +98,18 @@ class DetectorManager:
             rec.append("Identify top processes (e.g. top/htop); consider scaling or limiting load.")
         elif event_type == "high_memory":
             rec.append("Check memory usage per process; consider freeing cache or adding capacity.")
+        elif event_type == "high_network_usage":
+            rec.append("Verify traffic source/destination; consider rate limiting or investigating abuse.")
+        elif event_type == "nginx_config_invalid":
+            rec.append("Fix nginx config (nginx -t) and reload: sudo nginx -s reload.")
+        elif event_type == "nginx_security":
+            rec.append("Set server_tokens off in nginx.conf and reload nginx.")
+        elif event_type == "firewall_inactive":
+            rec.append("Enable UFW: sudo ufw enable (review rules first).")
+        elif event_type == "firewall_audit":
+            rec.append("Configure host firewall (ufw or iptables) and ensure default deny or allow policy.")
+        elif event_type == "npm_audit_vulnerabilities":
+            rec.append("Run 'npm audit fix' in the project directory; for breaking changes consider 'npm audit fix --force' or manual updates.")
         else:
             rec.append("Review evidence and take action as per runbook.")
         return rec
@@ -121,4 +141,16 @@ class DetectorManager:
         # Resource usage (CPU, memory)
         resource_evs = await self._resources.check()
         events.extend(resource_evs)
+        # Network usage (high throughput)
+        network_evs = await self._network.check()
+        events.extend(network_evs)
+        # Nginx config and security
+        nginx_evs = await self._nginx_audit.check()
+        events.extend(nginx_evs)
+        # Firewall (ufw) status
+        firewall_evs = await self._firewall_audit.check()
+        events.extend(firewall_evs)
+        # npm audit (package.json dirs)
+        npm_evs = await self._npm_audit.check()
+        events.extend(npm_evs)
         return events

@@ -35,9 +35,23 @@ collector:
 
 # Detectors
 detector:
+  detector_interval_sec: 60
   auth_failure_threshold: 5
   auth_failure_window_sec: 300
   baseline_learning_days: 3
+  resource_detector_enabled: true
+  resource_cpu_percent: 90
+  resource_memory_percent: 90
+  network_detector_enabled: true
+  network_mb_per_sec_threshold: 100
+  nginx_audit_enabled: true
+  nginx_config_paths: ["/etc/nginx/nginx.conf"]
+  nginx_check_security: true
+  firewall_audit_enabled: true
+  firewall_require_active: true
+  npm_audit_enabled: true
+  npm_audit_paths: ["/var/www", "/opt", "/home"]
+  npm_audit_max_depth: 4
 
 # Notifications
 notifications:

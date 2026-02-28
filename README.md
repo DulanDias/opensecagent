@@ -33,7 +33,7 @@
 | Host inventory (OS, packages, services, ports, sudo users) | ✅ Implemented | dpkg/rpm, systemd, ss/netstat |
 | Docker inventory (containers, images) | ✅ Implemented | Via Docker SDK |
 | Drift monitoring (critical files) | ✅ Implemented | Baseline + hash diff |
-| Detectors (auth, admin, ports, containers) | ✅ Implemented | Rule-based |
+| Detectors (auth, admin, ports, containers, CPU/memory, network, nginx, firewall, npm audit) | ✅ Implemented | Rule-based; npm audit in package.json dirs |
 | Policy engine (Tier 0/1) | ✅ Implemented | Alert-only + soft containment |
 | Responder (stop container, block IP stub) | ✅ Implemented | Docker stop; IP block placeholder |
 | Audit log (incidents + actions) | ✅ Implemented | JSONL append-only |

@@ -78,6 +78,20 @@ detector:
   resource_detector_enabled: true
   resource_cpu_percent: 90
   resource_memory_percent: 90
+  # Network: alert when throughput exceeds threshold (MB/s)
+  network_detector_enabled: true
+  network_mb_per_sec_threshold: 100
+  # Nginx: nginx -t and optional security checks (server_tokens off)
+  nginx_audit_enabled: true
+  nginx_config_paths: ["/etc/nginx/nginx.conf"]
+  nginx_check_security: true
+  # Firewall: require UFW active (or iptables)
+  firewall_audit_enabled: true
+  firewall_require_active: true
+  # npm audit: scan paths for package.json, run npm audit
+  npm_audit_enabled: true
+  npm_audit_paths: ["/var/www", "/opt", "/home"]
+  npm_audit_max_depth: 4
 
 # Notifications: provider = smtp | resend
 notifications:
