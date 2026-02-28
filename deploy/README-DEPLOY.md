@@ -1,8 +1,42 @@
-# Deploy OpenSecAgent to 192.168.1.50
+# Deploy OpenSecAgent
 
-SSH from your machine requires key-based auth or a password. Use one of the options below.
+## Install from GitHub (recommended)
 
-## Option A: Copy project and run install on the server
+On the server (e.g. 192.168.1.50), clone and install in one go:
+
+```bash
+# SSH to server first, then:
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/DulanDias/opensecagent/main/deploy/install-from-github.sh)"
+```
+
+Or clone manually then run the script:
+
+```bash
+git clone https://github.com/DulanDias/opensecagent.git /opt/opensecagent
+cd /opt/opensecagent
+sudo ./deploy/install-from-github.sh
+```
+
+**Private repo:** If the repo is private, use SSH and set the repo URL before running:
+
+```bash
+export OPENSECAGENT_REPO=git@github.com:DulanDias/opensecagent.git
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/DulanDias/opensecagent/main/deploy/install-from-github.sh)"
+```
+
+Or clone with SSH first: `git clone git@github.com:DulanDias/opensecagent.git /opt/opensecagent`, then `cd /opt/opensecagent && sudo ./deploy/install-from-github.sh`.
+
+After install, **edit config** to add your API keys and admin email:
+
+```bash
+sudo nano /etc/opensecagent/config.yaml
+# Set notifications.admin_emails and (if not using wizard) llm.api_key, notifications.resend.*
+sudo systemctl restart opensecagent
+```
+
+---
+
+## Option B: Copy project and run install on the server
 
 1. **Copy the project to the server** (from your Mac, with SSH access):
    ```bash
@@ -37,7 +71,7 @@ SSH from your machine requires key-based auth or a password. Use one of the opti
    sudo systemctl restart opensecagent
    ```
 
-## Option B: Run setup wizard on the server
+## Option C: Run setup wizard on the server
 
 After copying the project and config:
 
