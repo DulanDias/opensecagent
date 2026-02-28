@@ -18,16 +18,11 @@ logging.basicConfig(
 logger = logging.getLogger("opensecagent")
 
 
-CLI_COMMANDS = {
-    "collect", "drift", "detect", "agent", "export-audit", "export-activity",
-    "wizard", "setup", "config", "install", "status", "uninstall",
-}
-
-
 def main() -> None:
-    # Dispatch to CLI for subcommands or --help (so we don't touch /var/lib without root)
-    args = [a for a in sys.argv[1:] if not a.startswith("-") and "=" not in a]
-    if any(a in CLI_COMMANDS for a in args) or "--help" in sys.argv or "-h" in sys.argv:
+    # Run daemon only when no subcommand is given (e.g. "opensecagent" or "opensecagent --config /path")
+    # If there is any positional arg (e.g. status, wizard, seup), use CLI so it handles valid commands or reports "invalid choice"
+    positionals = [a for a in sys.argv[1:] if not a.startswith("-") and "=" not in a]
+    if positionals or "--help" in sys.argv or "-h" in sys.argv:
         from opensecagent.cli import main as cli_main
         cli_main()
         return

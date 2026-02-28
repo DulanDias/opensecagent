@@ -40,6 +40,28 @@ def find_config_path(path: str | Path | None = None) -> Path | None:
     return None
 
 
+def _ensure_writable_paths(config: dict[str, Any]) -> None:
+    """If configured data_dir/log_dir are not writable (e.g. running as non-root), switch to user paths."""
+    data_dir = Path(config.get("agent", {}).get("data_dir", "/var/lib/opensecagent"))
+    log_dir = Path(config.get("agent", {}).get("log_dir", "/var/log/opensecagent"))
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return
+    except (PermissionError, OSError):
+        pass
+    home = Path.home()
+    user_data = home / ".local" / "share" / "opensecagent"
+    user_log = home / ".local" / "state" / "opensecagent"
+    user_data.mkdir(parents=True, exist_ok=True)
+    user_log.mkdir(parents=True, exist_ok=True)
+    config.setdefault("agent", {})["data_dir"] = str(user_data)
+    config.setdefault("agent", {})["log_dir"] = str(user_log)
+    config.setdefault("audit", {})["file"] = str(user_log / "audit.jsonl")
+    config.setdefault("activity", {})["file"] = str(user_log / "activity.jsonl")
+    config.setdefault("activity", {})["log_dir"] = str(user_log)
+
+
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     path = path or os.environ.get("OPENSECAGENT_CONFIG")
     if path:
@@ -47,29 +69,39 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         if path.exists():
             with open(path) as f:
                 data = yaml.safe_load(f) or {}
-            return _deep_merge(_default_config(), data)
+            config = _deep_merge(_default_config(), data)
+            _ensure_writable_paths(config)
+            return config
     # Standard paths (no --config given)
     for candidate in [Path("/etc/opensecagent/config.yaml"), Path(os.path.expanduser("~/.config/opensecagent/config.yaml"))]:
         if candidate.exists():
             with open(candidate) as f:
                 data = yaml.safe_load(f) or {}
-            return _deep_merge(_default_config(), data)
+            config = _deep_merge(_default_config(), data)
+            _ensure_writable_paths(config)
+            return config
     # Try project root config (development)
     base = Path(__file__).resolve().parent.parent
     dev_config = base / "config" / "default.yaml"
     if dev_config.exists():
         with open(dev_config) as f:
             data = yaml.safe_load(f) or {}
-        return _deep_merge(_default_config(), data)
+        config = _deep_merge(_default_config(), data)
+        _ensure_writable_paths(config)
+        return config
     # Try package-bundled config
     try:
         from importlib.resources import files
         cfg = files("opensecagent") / "config" / "default.yaml"
         data = yaml.safe_load((cfg.read_bytes()).decode()) or {}
-        return _deep_merge(_default_config(), data)
+        config = _deep_merge(_default_config(), data)
+        _ensure_writable_paths(config)
+        return config
     except Exception:
         pass
-    return _default_config()
+    config = _default_config()
+    _ensure_writable_paths(config)
+    return config
 
 
 def _default_config() -> dict[str, Any]:

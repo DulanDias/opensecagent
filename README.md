@@ -130,7 +130,28 @@ docker run -d --name opensecagent \
 | `llm_agent.run_on_incident` | Run agent when P1/P2 incident | true |
 | `llm_agent.run_interval_sec` | Periodic agent run (0=disabled) | 0 |
 | `audit.file` | Audit log path | `/var/log/opensecagent/audit.jsonl` |
+| `llm.model` | Default model (e.g. gpt-4o-mini) | gpt-4o-mini |
+| `llm.model_scan` | Model for routine scans (blank = use model) | — |
+| `llm.model_resolve` | Model for threat resolution (blank = use model) | — |
 | `activity.file` | Activity log path | `/var/log/opensecagent/activity.jsonl` |
+
+### Testing your setup
+
+After configuring, verify LLM and email from the server:
+
+```bash
+opensecagent test
+```
+
+This prints your config summary (LLM provider, models, notifications), runs **one short LLM call** to confirm the API key and model work, and **sends a test email** to your admin address. Fix any reported errors (e.g. invalid API key, wrong Resend from-address).
+
+To **choose a specific OpenAI model**, edit the config file (e.g. `~/.config/opensecagent/config.yaml` or `/etc/opensecagent/config.yaml`) and set:
+
+- `llm.model` — default (e.g. `gpt-4o-mini` or `gpt-4o`)
+- `llm.model_scan` — for periodic scans (cheaper model)
+- `llm.model_resolve` — for incident resolution (more capable model)
+
+Or use: `opensecagent config set llm.model gpt-4o`
 
 ---
 

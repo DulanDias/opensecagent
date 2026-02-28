@@ -188,15 +188,27 @@ def cmd_wizard() -> None:
     config_dir = _prompt("Config directory", "/etc/opensecagent")
     data_dir = _prompt("Data directory", "/var/lib/opensecagent")
     log_dir = _prompt("Log directory", "/var/log/opensecagent")
-    config_dir = Path(config_dir)
-    data_dir = Path(data_dir)
-    log_dir = Path(log_dir)
+    config_dir = Path(config_dir).expanduser()
+    data_dir = Path(data_dir).expanduser()
+    log_dir = Path(log_dir).expanduser()
     config_path = config_dir / "config.yaml"
 
-    config_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n  Created: {config_dir}, {data_dir}, {log_dir}")
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Fall back to user-writable paths when not root
+        home = Path.home()
+        config_dir = home / ".config" / "opensecagent"
+        data_dir = home / ".local" / "share" / "opensecagent"
+        log_dir = home / ".local" / "state" / "opensecagent"
+        config_path = config_dir / "config.yaml"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n  Using user paths (no write access to /etc or /var):")
+    print(f"  Created: {config_dir}, {data_dir}, {log_dir}")
 
     config = get_default_config()
     config["agent"]["data_dir"] = str(data_dir)
@@ -479,6 +491,72 @@ def cmd_status(config_path: str | None) -> None:
             print("  Daemon:  unknown (no systemctl/pgrep)")
 
 
+async def cmd_test(config: dict[str, Any]) -> None:
+    """Test config, LLM connectivity, and email delivery."""
+    print("\n  OpenSecAgent — Connectivity test\n")
+    llm = config.get("llm", {})
+    notif = config.get("notifications", {})
+    agent_cfg = config.get("llm_agent", {})
+
+    # Config summary
+    print("  Config summary:")
+    print(f"    LLM enabled:     {llm.get('enabled', False)}")
+    print(f"    LLM provider:    {llm.get('provider', 'openai')}")
+    print(f"    Model (default): {llm.get('model', 'gpt-4o-mini')}")
+    print(f"    Model (scan):    {llm.get('model_scan') or llm.get('model', '—')}")
+    print(f"    Model (resolve): {llm.get('model_resolve') or llm.get('model', '—')}")
+    print(f"    LLM agent on P1/P2: {agent_cfg.get('run_on_incident', True)}")
+    print(f"    Notifications:   {notif.get('provider', 'smtp')}")
+    print(f"    Admin emails:     {notif.get('admin_emails', []) or '(none)'}")
+    print()
+
+    # Test LLM
+    if llm.get("enabled") and llm.get("api_key"):
+        print("  Testing LLM (one short completion)...")
+        try:
+            from opensecagent.llm_client import chat
+            model = llm.get("model") or "gpt-4o-mini"
+            out = await chat(
+                provider=llm.get("provider", "openai"),
+                model=model,
+                messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+                max_tokens=10,
+                api_key=llm.get("api_key", ""),
+                base_url=llm.get("base_url") or None,
+            )
+            if out and "OK" in out.upper():
+                print(f"    LLM: OK (model {model})")
+            else:
+                print(f"    LLM: responded but unexpected: {out[:80]!r}")
+        except Exception as e:
+            print(f"    LLM: FAILED — {e}")
+    else:
+        print("  LLM: skipped (disabled or no api_key)")
+
+    # Test email
+    if notif.get("admin_emails") and (
+        (notif.get("provider") == "resend" and notif.get("resend", {}).get("api_key"))
+        or (notif.get("provider") == "smtp" and notif.get("smtp", {}).get("host"))
+    ):
+        print("  Testing email (sending test to admin addresses)...")
+        try:
+            from opensecagent.reporter.email_reporter import EmailReporter
+            reporter = EmailReporter(notif)
+            await reporter._send_mail(
+                "[OpenSecAgent] Test email",
+                "This is a test email from OpenSecAgent. If you received this, email delivery is working.",
+                None,
+                "",
+            )
+            print("    Email: sent (check your inbox)")
+        except Exception as e:
+            print(f"    Email: FAILED — {e}")
+    else:
+        print("  Email: skipped (no admin_emails or missing Resend/SMTP config)")
+
+    print("\n  Done.\n")
+
+
 def cmd_uninstall(stop_only: bool) -> None:
     """Stop and disable systemd service; optionally remove unit file."""
     try:
@@ -535,6 +613,9 @@ def main() -> None:
     # status
     p_status = sub.add_parser("status", help="Show status and paths")
 
+    # test (LLM + email connectivity)
+    sub.add_parser("test", help="Test LLM and email: verify config, run one LLM call, send a test email")
+
     # uninstall
     p_uninstall = sub.add_parser("uninstall", help="Stop and remove systemd service")
     p_uninstall.add_argument("--remove-unit", action="store_true", help="Remove unit file (default: only stop/disable)")
@@ -588,6 +669,8 @@ def main() -> None:
         )
     elif args.command == "status":
         cmd_status(config_path)
+    elif args.command == "test":
+        asyncio.run(cmd_test(config))
     elif args.command == "uninstall":
         cmd_uninstall(getattr(args, "remove_unit", False))
     elif args.command == "collect":
