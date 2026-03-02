@@ -6,6 +6,14 @@ Use these steps **on your home server** to verify OpenSecAgent detects and respo
 
 - OpenSecAgent installed and configured (`opensecagent status` works).
 - For **auto-remediation**: `llm_agent.enabled: true` and `llm_agent.run_on_incident: true` in config, and a valid LLM API key.
+- **Scheduler must be running** — detection does not run by itself. Use one of:
+  - **Daemon (foreground)**: `opensecagent --config ~/.config/opensecagent/config.yaml` in a terminal or screen/tmux.
+  - **Cron (recommended if no systemd)**: run a full cycle every 1–2 minutes so incidents are detected and the agent can act:
+    ```bash
+    crontab -e
+    # Add (run every 2 minutes):
+    */2 * * * * opensecagent run-once --config ~/.config/opensecagent/config.yaml
+    ```
 - Optional: lower the CPU threshold for easier testing, e.g. in `~/.config/opensecagent/config.yaml`:
   ```yaml
   detector:

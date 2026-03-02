@@ -74,6 +74,62 @@ class Daemon:
     def shutdown(self) -> None:
         self._running = False
 
+    async def run_one_cycle(self) -> None:
+        """Run one full cycle: collect, drift, detect, process all events (for cron/scheduler)."""
+        self._event_queue = asyncio.Queue()
+        logger.info("OpenSecAgent run-one-cycle starting")
+        await self._audit.start()
+        await self._activity.start()
+        await self._reporter.start()
+        try:
+            # One host collect
+            try:
+                inv = await self._host_collector.collect()
+                self._last_host_inv = inv
+                for e in self._normalizer.host_inventory_to_events(inv):
+                    await self._event_queue.put(e)  # type: ignore
+            except Exception as e:
+                logger.exception("Host collector error: %s", e)
+            # One docker collect
+            try:
+                inv = await self._docker_collector.collect()
+                self._last_docker_inv = inv
+                for e in self._normalizer.docker_inventory_to_events(inv):
+                    await self._event_queue.put(e)  # type: ignore
+            except Exception as e:
+                logger.exception("Docker collector error: %s", e)
+            # One drift check
+            try:
+                events = await self._drift_monitor.check()
+                for e in events:
+                    await self._event_queue.put(e)  # type: ignore
+            except Exception as e:
+                logger.exception("Drift error: %s", e)
+            # One detector run (with fresh inventory)
+            try:
+                self._detector_manager.update_inventory(self._last_host_inv, self._last_docker_inv)
+                events = await self._detector_manager.run_detectors()
+                logger.info("Detector run: %d events", len(events))
+                for e in events:
+                    await self._event_queue.put(e)  # type: ignore
+            except Exception as e:
+                logger.exception("Detector error: %s", e)
+            # Drain queue and process every event (incidents -> audit, agent, etc.)
+            processed = 0
+            while True:
+                try:
+                    event = self._event_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                await self._process_event(event)
+                processed += 1
+            logger.info("Processed %d events", processed)
+        finally:
+            await self._reporter.cleanup()
+            await self._activity.stop()
+            await self._audit.stop()
+        logger.info("OpenSecAgent run-one-cycle done")
+
     async def run(self) -> None:
         self._running = True
         self._event_queue = asyncio.Queue()

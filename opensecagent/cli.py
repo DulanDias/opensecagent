@@ -495,6 +495,31 @@ WantedBy=multi-user.target
 """
 
 
+def _get_systemd_user_unit_content(config_file: Path) -> str:
+    """Content for systemd user service (runs as current user, no root)."""
+    source = Path(__file__).resolve().parent.parent
+    unit_file = source / "systemd" / "opensecagent-user.service"
+    if unit_file.exists():
+        content = unit_file.read_text()
+        content = content.replace("%CONFIG_FILE%", str(config_file))
+        content = content.replace("/usr/bin/python3", sys.executable)
+        return content
+    return f"""[Unit]
+Description=OpenSecAgent - Security monitoring daemon (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={sys.executable} -m opensecagent.main --config {config_file}
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
+
+
 def cmd_install(
     config_path: str | None,
     install_dir: str,
@@ -554,11 +579,34 @@ def cmd_install(
         else:
             print("  Run: sudo systemctl enable opensecagent && sudo systemctl start opensecagent")
             print("  Logs: journalctl -u opensecagent -f")
-    except (PermissionError, OSError) as e:
-        print("  Skipped systemd install (need root). Run daemon manually:", file=sys.stderr)
-        print(f"    opensecagent --config {config_file}", file=sys.stderr)
+    except (PermissionError, OSError):
+        _install_user_service(config_file, no_start)
     if interactive:
         print("\n  Config file:", config_file, "\n")
+
+
+def _install_user_service(config_file: Path, no_start: bool) -> None:
+    """Install systemd user service so the daemon runs in the background (no root)."""
+    user_dir = Path.home() / ".config" / "systemd" / "user"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    unit = user_dir / "opensecagent.service"
+    content = _get_systemd_user_unit_content(config_file)
+    unit.write_text(content)
+    print(f"  Wrote user service: {unit}")
+    try:
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "--user", "enable", "opensecagent.service"], check=True)
+        if not no_start:
+            subprocess.run(["systemctl", "--user", "start", "opensecagent.service"], check=True)
+            print("  Started OpenSecAgent (user service). Daemon is running in the background.")
+        else:
+            print("  Start with: systemctl --user start opensecagent")
+        print("  Logs: journalctl --user -u opensecagent -f")
+        print("  Status: systemctl --user status opensecagent")
+        print("  To run when logged out: loginctl enable-linger $USER")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"  Could not enable/start user service: {e}", file=sys.stderr)
+        print("  Run manually: opensecagent --config", config_file, file=sys.stderr)
 
 
 def cmd_status(config_path: str | None) -> None:
@@ -580,10 +628,17 @@ def cmd_status(config_path: str | None) -> None:
             raise FileNotFoundError
     except FileNotFoundError:
         try:
-            r2 = subprocess.run(["pgrep", "-f", "opensecagent.main"], capture_output=True)
-            print("  Daemon:  running (pid)" if r2.returncode == 0 else "  Daemon:  not running")
+            r_user = subprocess.run(["systemctl", "--user", "is-active", "opensecagent"], capture_output=True, text=True)
+            if r_user.returncode == 0 and r_user.stdout.strip() == "active":
+                print("  Daemon:  running (systemd user)")
+            else:
+                raise FileNotFoundError
         except FileNotFoundError:
-            print("  Daemon:  unknown (no systemctl/pgrep)")
+            try:
+                r2 = subprocess.run(["pgrep", "-f", "opensecagent.main"], capture_output=True)
+                print("  Daemon:  running (pid)" if r2.returncode == 0 else "  Daemon:  not running")
+            except FileNotFoundError:
+                print("  Daemon:  unknown (no systemctl/pgrep)")
 
 
 async def cmd_test(config: dict[str, Any]) -> None:
@@ -653,17 +708,25 @@ async def cmd_test(config: dict[str, Any]) -> None:
 
 
 def cmd_uninstall(stop_only: bool) -> None:
-    """Stop and disable systemd service; optionally remove unit file."""
+    """Stop and disable systemd service (system and user); optionally remove unit file."""
     try:
         subprocess.run(["systemctl", "stop", "opensecagent"], capture_output=True)
         subprocess.run(["systemctl", "disable", "opensecagent"], capture_output=True)
-        print("Stopped and disabled opensecagent service.")
+        print("Stopped and disabled opensecagent system service (if any).")
+        subprocess.run(["systemctl", "--user", "stop", "opensecagent"], capture_output=True)
+        subprocess.run(["systemctl", "--user", "disable", "opensecagent"], capture_output=True)
+        print("Stopped and disabled opensecagent user service (if any).")
         if not stop_only:
-            unit = Path("/etc/systemd/system/opensecagent.service")
-            if unit.exists():
-                unit.unlink()
+            unit_sys = Path("/etc/systemd/system/opensecagent.service")
+            if unit_sys.exists():
+                unit_sys.unlink()
                 subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
-                print("Removed systemd unit. Data and config were left in place.")
+                print("Removed system unit. Data and config were left in place.")
+            unit_user = Path.home() / ".config" / "systemd" / "user" / "opensecagent.service"
+            if unit_user.exists():
+                unit_user.unlink()
+                subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+                print("Removed user unit.")
     except FileNotFoundError:
         print("systemctl not found (not a systemd system). No service to uninstall.", file=sys.stderr)
 
@@ -720,6 +783,7 @@ def main() -> None:
     sub.add_parser("drift", help="Run drift check once")
     sub.add_parser("detect", help="Run detectors once")
     sub.add_parser("agent", help="Run LLM agent loop once")
+    p_run_once = sub.add_parser("run-once", help="One full cycle: collect, drift, detect, process incidents + LLM agent (for cron)")
     p_ea = sub.add_parser("export-audit", help="Export audit log as JSON")
     p_ea.add_argument("--path", "-p", help="Audit file path")
     p_eact = sub.add_parser("export-activity", help="Export activity log as JSON")
@@ -776,6 +840,10 @@ def main() -> None:
         asyncio.run(run_command_with_report(config, "detect"))
     elif args.command == "agent":
         asyncio.run(run_command_with_report(config, "agent"))
+    elif args.command == "run-once":
+        from opensecagent.daemon import Daemon
+        daemon = Daemon(config)
+        asyncio.run(daemon.run_one_cycle())
     elif args.command == "export-audit":
         asyncio.run(cmd_export_audit(config, getattr(args, "path", None)))
     elif args.command == "export-activity":

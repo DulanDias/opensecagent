@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenSecAgent - Security monitoring daemon (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ExecStart is replaced at install time with actual python and config path
+ExecStart=/usr/bin/python3 -m opensecagent.main --config %CONFIG_FILE%
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

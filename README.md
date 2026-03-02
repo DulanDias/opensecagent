@@ -105,6 +105,26 @@ docker run -d --name opensecagent \
   opensecagent
 ```
 
+### Running the agent (scheduler)
+
+**Detection and the LLM agent only run when something runs OpenSecAgent.** Use one of:
+
+- **Daemon (long-running)**  
+  Start the daemon so it runs collectors and detectors on its own schedule:
+  ```bash
+  opensecagent --config ~/.config/opensecagent/config.yaml
+  ```
+  Keep this running (e.g. in `screen`/`tmux` or as a systemd service).
+
+- **Cron (no daemon)**  
+  If you can't keep the daemon running, run one full cycle on a schedule (collect → drift → detect → process incidents and LLM agent):
+  ```bash
+  crontab -e
+  # Every 2 minutes:
+  */2 * * * * opensecagent run-once --config ~/.config/opensecagent/config.yaml
+  ```
+  `run-once` does one round of collection, drift, detection, then processes all events (alerts, email, LLM agent for P1/P2).
+
 ---
 
 ## Configuration
